@@ -1,0 +1,10 @@
+services:
+  notes2latex:
+    build: .
+    env_file:
+      - .env
+    volumes:
+      - ./input:/input
+      - ./output:/output
+    entrypoint: ["uv", "run", "notes2latex", "convert"]
+    command: ["/input/notes.pdf", "-o", "/output"]
