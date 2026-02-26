@@ -1,156 +1,134 @@
 """LangGraph pipeline — the agentic generate→compile→fix loop."""
 
 import asyncio
-import logging
-import re
 import shutil
 from pathlib import Path
-from typing import Annotated, TypedDict
 
-from jinja2 import Environment, FileSystemLoader
 from langgraph.graph import END, StateGraph
+from tenacity import retry, stop_after_attempt, wait_exponential
 
-from notes2latex.compiler import compile_latex
-from notes2latex.config import Settings
-from notes2latex.llm import fix_latex, transcribe_page
-from notes2latex.preprocessor import load_pages
+from agent.config import AgentConfig
+from agent.state import PipelineState, get_settings
+from agent.utils.text import strip_code_fences
+from clients.llm.client import acompletion
+from compiler.compiler import compile_latex
+from core.config import Settings
+from core.logger import get_logger
+from document.preprocessing import load_pages
+from document.processing import assemble_document, open_environments, strip_preamble_from_body
 
-logger = logging.getLogger(__name__)
-
-
-# ---------------------------------------------------------------------------
-# Static preamble — single source of truth
-# ---------------------------------------------------------------------------
-
-PREAMBLE = r"""\documentclass[12pt]{article}
-
-% --- Packages ---
-\usepackage{amsmath, amssymb, amsthm}
-\usepackage{mathtools}
-\usepackage{thmtools}
-\usepackage{cancel}
-\usepackage{mathrsfs}
-
-% physics redefines \div to divergence — save and restore
-\let\olddiv\div
-\usepackage{physics}
-\let\div\olddiv
-
-\usepackage{siunitx}
-\usepackage{tikz, tikz-cd, pgfplots}
-\pgfplotsset{compat=1.18}
-\usetikzlibrary{decorations.pathreplacing, arrows.meta, calc}
-\usepackage{algorithm2e}
-\usepackage{listings}
-\usepackage{geometry}
-\geometry{margin=1in}
-\usepackage{enumitem}
-\usepackage{hyperref}
-\usepackage{tcolorbox}
-
-% --- Theorem environments ---
-\newtheorem{theorem}{Theorem}[section]
-\newtheorem{lemma}[theorem]{Lemma}
-\newtheorem{corollary}[theorem]{Corollary}
-\newtheorem{proposition}[theorem]{Proposition}
-\theoremstyle{definition}
-\newtheorem{definition}[theorem]{Definition}
-\newtheorem{example}[theorem]{Example}
-\newtheorem{exercise}[theorem]{Exercise}
-\theoremstyle{remark}
-\newtheorem{remark}[theorem]{Remark}
-\newtheorem{notation}[theorem]{Notation}
-
-\begin{document}"""
+logger = get_logger(__name__)
 
 
 # ---------------------------------------------------------------------------
-# State
+# Domain LLM functions
 # ---------------------------------------------------------------------------
 
 
-def _replace(a, b):
-    """Reducer that always takes the newer value."""
-    return b
+def _make_agent_config(settings: Settings) -> AgentConfig:
+    """Construct an AgentConfig from application Settings."""
+    return AgentConfig(
+        model=settings.model,
+        temperature=settings.temperature,
+        max_tokens=settings.max_tokens,
+        max_retries=settings.max_retries,
+        context_lines=settings.context_lines,
+    )
 
 
-class PipelineState(TypedDict, total=False):
-    pages: list[str]
-    settings_dict: Annotated[dict, _replace]  # serialized Settings for node access
-    page_index: Annotated[int, _replace]
-    retry_count: Annotated[int, _replace]
-    # Body content only — no preamble, no \begin/\end{document}
-    base_body: Annotated[str, _replace]
-    accumulated_body: Annotated[str, _replace]
-    current_page_latex: Annotated[str, _replace]
-    compiler_success: Annotated[bool, _replace]
-    errors: Annotated[list[dict], _replace]
-    output_tex_path: Annotated[str, _replace]
-    output_pdf_path: Annotated[str, _replace]
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=2, max=30),
+    reraise=True,
+)
+async def transcribe_page(
+    image_b64: str,
+    system_prompt: str,
+    config: AgentConfig,
+    context_latex: str = "",
+) -> str:
+    """Send a page image to the VLM and return LaTeX source."""
+    messages: list[dict] = [
+        {"role": "system", "content": system_prompt},
+    ]
+
+    user_content: list[dict] = []
+
+    if context_latex:
+        # Send only the last N lines of body as context to stay within token limits
+        lines = context_latex.splitlines()
+        tail = "\n".join(lines[-config.context_lines :])
+        user_content.append({
+            "type": "text",
+            "text": (
+                "Here is the LaTeX body from previous pages (last "
+                f"{config.context_lines} lines):\n```latex\n{tail}\n```\n"
+                "Continue typesetting the next page shown in the image."
+            ),
+        })
+
+    user_content.append({
+        "type": "text",
+        "text": "Typeset the handwritten math notes in this image into LaTeX body content.",
+    })
+
+    user_content.append({
+        "type": "image_url",
+        "image_url": {
+            "url": f"data:image/png;base64,{image_b64}",
+            "detail": "high",
+        },
+    })
+
+    messages.append({"role": "user", "content": user_content})
+
+    text = await acompletion(
+        model=config.model,
+        messages=messages,
+        temperature=config.temperature,
+        max_tokens=config.max_tokens,
+    )
+    return strip_code_fences(text)
 
 
-def _get_settings(state: PipelineState) -> Settings:
-    """Reconstruct Settings from state dict."""
-    return Settings(**state.get("settings_dict", {}))
+@retry(
+    stop=stop_after_attempt(2),
+    wait=wait_exponential(multiplier=1, min=1, max=10),
+    reraise=True,
+)
+async def fix_latex(
+    latex_source: str,
+    errors: list[dict],
+    system_prompt: str,
+    config: AgentConfig,
+) -> str:
+    """Send broken LaTeX + errors to LLM, return fixed LaTeX."""
+    error_text = "\n".join(
+        f"- Line {e.get('line', '?')}: {e['message']}"
+        + (f" (context: {e['context']})" if e.get("context") else "")
+        for e in errors
+    )
 
+    messages: list[dict] = [
+        {"role": "system", "content": system_prompt},
+        {
+            "role": "user",
+            "content": (
+                f"The following LaTeX source has compilation errors:\n\n"
+                f"```latex\n{latex_source}\n```\n\n"
+                f"Errors:\n{error_text}\n\n"
+                f"Return ONLY the corrected complete LaTeX source."
+            ),
+        },
+    ]
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-_PROMPTS_DIR = Path(__file__).parent / "prompts"
-
-_RE_ENV = re.compile(r"\\(begin|end)\{([^}]+)\}")
-
-
-def _jinja_env() -> Environment:
-    return Environment(loader=FileSystemLoader(str(_PROMPTS_DIR)))
-
-
-def open_environments(latex: str) -> list[str]:
-    """Return stack of environments still open at end of the string."""
-    stack: list[str] = []
-    for m in _RE_ENV.finditer(latex):
-        if m.group(1) == "begin":
-            stack.append(m.group(2))
-        elif stack and stack[-1] == m.group(2):
-            stack.pop()
-    return stack
-
-
-def _assemble_document(body: str) -> str:
-    """Wrap body content in the static preamble and document environment."""
-    return PREAMBLE + "\n" + body + "\n\\end{document}\n"
-
-
-def _strip_preamble_from_body(latex: str) -> str:
-    """Strip preamble lines that the model mistakenly includes in body-only output."""
-    lines = latex.splitlines()
-    filtered = []
-    for line in lines:
-        stripped = line.strip()
-        if stripped.startswith(r"\documentclass"):
-            continue
-        if stripped.startswith(r"\usepackage"):
-            continue
-        if stripped == r"\begin{document}":
-            continue
-        if stripped == r"\end{document}":
-            continue
-        if stripped.startswith(r"\newtheorem"):
-            continue
-        if stripped.startswith(r"\theoremstyle"):
-            continue
-        if stripped.startswith(r"\pgfplotsset"):
-            continue
-        if stripped.startswith(r"\geometry{"):
-            continue
-        if stripped.startswith(r"\declaretheoremstyle"):
-            continue
-        if stripped.startswith(r"\declaretheorem"):
-            continue
-        filtered.append(line)
-    return "\n".join(filtered)
+    text = await acompletion(
+        model=config.model,
+        messages=messages,
+        temperature=0.0,
+        max_tokens=config.max_tokens,
+    )
+    return strip_code_fences(text)
 
 
 # ---------------------------------------------------------------------------
@@ -173,7 +151,8 @@ async def preprocess_node(state: PipelineState) -> dict:
 
 
 async def generate_latex_node(state: PipelineState) -> dict:
-    settings = _get_settings(state)
+    settings = get_settings(state)
+    config = _make_agent_config(settings)
     page_idx = state["page_index"]
     page_b64 = state["pages"][page_idx]
 
@@ -182,24 +161,22 @@ async def generate_latex_node(state: PipelineState) -> dict:
     accumulated_body = state.get("accumulated_body", "")
     open_envs = open_environments(accumulated_body) if accumulated_body else []
 
-    template = _jinja_env().get_template("transcribe.md")
-    system_prompt = template.render(
+    system_prompt = config.render_transcribe_prompt(
         page_number=page_idx + 1,
         open_envs=open_envs,
     )
 
-    # Pass body tail as context (llm.py truncates to last N lines)
-    # Body-only = no preamble noise in the context window
+    # Pass body tail as context
     context = accumulated_body if accumulated_body else ""
 
     latex = await transcribe_page(
         image_b64=page_b64,
         system_prompt=system_prompt,
-        settings=settings,
+        config=config,
         context_latex=context,
     )
 
-    latex = _strip_preamble_from_body(latex)
+    latex = strip_preamble_from_body(latex)
     base = accumulated_body
     new_body = (base + "\n" + latex) if base else latex
 
@@ -212,18 +189,17 @@ async def generate_latex_node(state: PipelineState) -> dict:
 
 
 async def compile_latex_node(state: PipelineState) -> dict:
-    settings = _get_settings(state)
+    settings = get_settings(state)
+    config = _make_agent_config(settings)
     body = state["accumulated_body"]
 
     # Temporarily close any environments still open at the end of the body
-    # so compilation succeeds even when an environment spans pages.
-    # The real accumulated_body is NOT modified — only the compilation input.
     open_envs = open_environments(body)
     if open_envs:
         closing_tags = "\n".join(rf"\end{{{env}}}" for env in reversed(open_envs))
         body = body + "\n" + closing_tags
 
-    full_doc = _assemble_document(body)
+    full_doc = assemble_document(body, config.preamble)
     result = await asyncio.to_thread(compile_latex, full_doc, settings)
 
     if result.errors:
@@ -245,14 +221,15 @@ async def compile_latex_node(state: PipelineState) -> dict:
 
 
 async def fix_latex_node(state: PipelineState) -> dict:
-    settings = _get_settings(state)
-    retry = state["retry_count"] + 1
+    settings = get_settings(state)
+    config = _make_agent_config(settings)
+    retry_count = state["retry_count"] + 1
     page_idx = state["page_index"]
 
-    logger.info("Fix attempt %d for page %d", retry, page_idx + 1)
+    logger.info("Fix attempt %d for page %d", retry_count, page_idx + 1)
 
     # Calculate line offset: preamble lines + base_body lines
-    preamble_lines = PREAMBLE.count("\n") + 1
+    preamble_lines = config.preamble.count("\n") + 1
     base_body = state["base_body"]
     base_lines = base_body.count("\n") + 1 if base_body else 0
     offset = preamble_lines + base_lines
@@ -264,24 +241,23 @@ async def fix_latex_node(state: PipelineState) -> dict:
             adjusted["line"] = max(1, adjusted["line"] - offset)
         adjusted_errors.append(adjusted)
 
-    template = _jinja_env().get_template("fix_errors.md")
-    system_prompt = template.render()
+    system_prompt = config.render_fix_errors_prompt()
 
     fixed_page = await fix_latex(
         latex_source=state["current_page_latex"],
         errors=adjusted_errors,
         system_prompt=system_prompt,
-        settings=settings,
+        config=config,
     )
 
-    fixed_page = _strip_preamble_from_body(fixed_page)
+    fixed_page = strip_preamble_from_body(fixed_page)
     base = state["base_body"]
     new_body = (base + "\n" + fixed_page) if base else fixed_page
 
     return {
         "current_page_latex": fixed_page,
         "accumulated_body": new_body,
-        "retry_count": retry,
+        "retry_count": retry_count,
     }
 
 
@@ -293,12 +269,13 @@ async def advance_page_node(state: PipelineState) -> dict:
 
 
 async def finalize_node(state: PipelineState) -> dict:
-    settings = _get_settings(state)
+    settings = get_settings(state)
+    config = _make_agent_config(settings)
     output_dir = settings.output_dir
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # Assemble full document from body
-    full_doc = _assemble_document(state["accumulated_body"])
+    full_doc = assemble_document(state["accumulated_body"], config.preamble)
 
     # Write final .tex
     tex_path = output_dir / "output.tex"
@@ -337,7 +314,7 @@ async def finalize_node(state: PipelineState) -> dict:
 def route_after_compile(state: PipelineState) -> str:
     if state.get("compiler_success"):
         return "advance"
-    settings = _get_settings(state)
+    settings = get_settings(state)
     if state.get("retry_count", 0) >= settings.max_retries:
         logger.warning(
             "Max retries reached for page %d, advancing anyway",

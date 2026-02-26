@@ -9,8 +9,8 @@ import typer
 from rich.console import Console
 from rich.logging import RichHandler
 
-from notes2latex.config import Settings
-from notes2latex.pipeline import run_pipeline
+from core.config import Settings
+from agent.graph import run_pipeline
 
 app = typer.Typer(
     name="notes2latex",
@@ -82,6 +82,6 @@ def convert(
 @app.command()
 def version() -> None:
     """Show version."""
-    from notes2latex import __version__
+    from importlib.metadata import version as get_version
 
-    console.print(f"notes2latex {__version__}")
+    console.print(f"notes2latex {get_version('notes2latex')}")

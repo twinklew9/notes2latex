@@ -7,7 +7,7 @@ from pathlib import Path
 import pymupdf
 from PIL import Image
 
-from notes2latex.config import Settings
+from core.config import Settings
 
 
 def load_pages(file_paths: list[Path], settings: Settings) -> list[str]:

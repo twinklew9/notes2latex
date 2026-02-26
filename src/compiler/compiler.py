@@ -6,7 +6,7 @@ import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from notes2latex.config import Settings
+from core.config import Settings
 
 RE_ERROR = re.compile(r"^! (.+)$", re.MULTILINE)
 RE_LINE_NUM = re.compile(r"^l\.(\d+)\s*(.*)", re.MULTILINE)

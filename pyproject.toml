@@ -23,8 +23,11 @@ dependencies = [
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+[tool.hatch.build.targets.wheel]
+packages = ["src/agent", "src/cli", "src/clients", "src/compiler", "src/core", "src/document"]
+
 [project.scripts]
-notes2latex = "notes2latex.cli:app"
+notes2latex = "cli.cli:app"
 
 [dependency-groups]
 dev = [

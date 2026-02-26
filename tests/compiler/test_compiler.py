@@ -1,9 +1,7 @@
 """Tests for the LaTeX compiler service."""
 
-import pytest
-
-from notes2latex.compiler import LatexError, _parse_errors, compile_latex
-from notes2latex.config import Settings
+from compiler.compiler import _parse_errors, compile_latex
+from core.config import Settings
 
 
 class TestParseErrors:
