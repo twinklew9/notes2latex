@@ -11,6 +11,11 @@
     <a href="#model-recommendations">Model Recommendations</a> &bull;
     <a href="#local-development">Local Development</a>
   </p>
+  <p align="center">
+    <a href="https://github.com/advaypakhale/notes2latex/actions/workflows/ci.yml"><img src="https://github.com/advaypakhale/notes2latex/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+    <a href="https://github.com/advaypakhale/notes2latex/pkgs/container/notes2latex"><img src="https://ghcr-badge.egpl.dev/advaypakhale/notes2latex/latest_tag?trim=major&label=image" alt="Docker Image"></a>
+    <a href="https://github.com/advaypakhale/notes2latex/blob/main/LICENSE"><img src="https://img.shields.io/github/license/advaypakhale/notes2latex" alt="License"></a>
+  </p>
 </p>
 
 ---
