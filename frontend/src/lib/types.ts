@@ -1,15 +1,18 @@
 export type JobStatus = "pending" | "processing" | "completed" | "failed";
 
-export type EventType =
-  | "job_started"
-  | "page_generating"
-  | "page_compiling"
-  | "page_compiled_ok"
-  | "page_fix_attempt"
-  | "page_done"
-  | "finalizing"
-  | "job_completed"
-  | "job_failed";
+export const EVENT_TYPES = [
+  "job_started",
+  "page_generating",
+  "page_compiling",
+  "page_compiled_ok",
+  "page_fix_attempt",
+  "page_done",
+  "finalizing",
+  "job_completed",
+  "job_failed",
+] as const;
+
+export type EventType = (typeof EVENT_TYPES)[number];
 
 export interface ProgressEvent {
   event_type: EventType;

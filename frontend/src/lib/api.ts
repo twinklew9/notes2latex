@@ -1,3 +1,4 @@
+import { EVENT_TYPES } from "./types";
 import type { JobResponse, PagesResponse, ProgressEvent } from "./types";
 
 const API_BASE = "/api/v1";
@@ -76,18 +77,7 @@ export function subscribeToJob(
     }
   };
 
-  const eventTypes = [
-    "job_started",
-    "page_generating",
-    "page_compiling",
-    "page_compiled_ok",
-    "page_fix_attempt",
-    "page_done",
-    "finalizing",
-    "job_completed",
-    "job_failed",
-  ];
-  for (const type of eventTypes) {
+  for (const type of EVENT_TYPES) {
     source.addEventListener(type, handler);
   }
 

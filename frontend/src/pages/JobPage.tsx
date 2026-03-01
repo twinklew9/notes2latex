@@ -15,6 +15,7 @@ import {
   Filter,
   FilterX,
 } from "lucide-react";
+import { useCopyToClipboard } from "@/lib/hooks";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
@@ -95,7 +96,8 @@ function ReviewTab({ jobId }: { jobId: string }) {
   const [totalPages, setTotalPages] = useState(0);
   const [currentPage, setCurrentPage] = useState(1);
   const [pageLatex, setPageLatex] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
+  const { copied, copy } = useCopyToClipboard();
+  const latexCache = useRef(new Map<number, string>());
 
   // Fetch page count on mount
   useEffect(() => {
@@ -106,13 +108,21 @@ function ReviewTab({ jobId }: { jobId: string }) {
       .catch(() => setTotalPages(0));
   }, [jobId]);
 
-  // Fetch LaTeX for current page
+  // Fetch LaTeX for current page (with cache)
   useEffect(() => {
     if (totalPages === 0) return;
+    const cached = latexCache.current.get(currentPage);
+    if (cached !== undefined) {
+      setPageLatex(cached);
+      return;
+    }
     let cancelled = false;
     getPageLatex(jobId, currentPage)
       .then((data) => {
-        if (!cancelled) setPageLatex(data.latex);
+        if (!cancelled) {
+          latexCache.current.set(currentPage, data.latex);
+          setPageLatex(data.latex);
+        }
       })
       .catch(() => {
         if (!cancelled) setPageLatex("Failed to load LaTeX for this page.");
@@ -121,13 +131,6 @@ function ReviewTab({ jobId }: { jobId: string }) {
       cancelled = true;
     };
   }, [jobId, currentPage, totalPages]);
-
-  const copyPageLatex = async () => {
-    if (!pageLatex) return;
-    await navigator.clipboard.writeText(pageLatex);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
 
   if (totalPages === 0) {
     return (
@@ -195,7 +198,7 @@ function ReviewTab({ jobId }: { jobId: string }) {
             <Button
               variant="outline"
               size="sm"
-              onClick={copyPageLatex}
+              onClick={() => pageLatex && copy(pageLatex)}
               disabled={!pageLatex}
             >
               {copied ? (
@@ -273,7 +276,7 @@ function LatexSourceView({
   texSource: string | null;
   texLoading: boolean;
 }) {
-  const [copied, setCopied] = useState(false);
+  const { copied, copy } = useCopyToClipboard();
   const [filterPage, setFilterPage] = useState<number | null>(null);
   const preRef = useRef<HTMLPreElement>(null);
 
@@ -287,23 +290,24 @@ function LatexSourceView({
     [segments],
   );
 
-  const copyTex = async () => {
-    if (!texSource) return;
-    await navigator.clipboard.writeText(texSource);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
+  const pendingScrollRef = useRef<number | null>(null);
 
   const scrollToPage = (pageNum: number) => {
     if (!preRef.current) return;
+    pendingScrollRef.current = pageNum;
     setFilterPage(null);
-    requestAnimationFrame(() => {
-      const marker = preRef.current?.querySelector(`[data-page="${pageNum}"]`);
-      if (marker) {
-        marker.scrollIntoView({ behavior: "smooth", block: "start" });
-      }
-    });
   };
+
+  // Scroll to page marker after filter clears and DOM updates
+  useEffect(() => {
+    const pageNum = pendingScrollRef.current;
+    if (pageNum === null || filterPage !== null) return;
+    pendingScrollRef.current = null;
+    const marker = preRef.current?.querySelector(`[data-page="${pageNum}"]`);
+    if (marker) {
+      marker.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }, [filterPage]);
 
   const toggleFilter = (pageNum: number) => {
     setFilterPage((prev) => (prev === pageNum ? null : pageNum));
@@ -364,7 +368,7 @@ function LatexSourceView({
           <Button
             variant="outline"
             size="sm"
-            onClick={copyTex}
+            onClick={() => texSource && copy(texSource)}
             disabled={!texSource}
           >
             {copied ? (
@@ -574,10 +578,12 @@ export function JobPage() {
 
   useEffect(() => {
     if (!id) return;
+    let cancelled = false;
 
     // Fetch initial job state
     getJob(id)
       .then((j) => {
+        if (cancelled) return;
         setJob(j);
         if (j.status === "completed") {
           setStatus("completed");
@@ -591,13 +597,16 @@ export function JobPage() {
 
         // Job is pending/processing — connect SSE (replays all past events)
         setStatus("processing");
+        if (cancelled) return;
         const unsub = subscribeToJob(
           id,
           (event: ProgressEvent) => {
+            if (cancelled) return;
             setLatestEvent(event);
             if (event.event_type === "job_completed") {
               // Refetch job to get has_pdf/has_tex
               getJob(id).then((updated) => {
+                if (cancelled) return;
                 setJob(updated);
                 setStatus("completed");
               });
@@ -608,25 +617,27 @@ export function JobPage() {
           },
           undefined,
           () => {
+            if (cancelled) return;
             // SSE error — job might have finished while we were away
             getJob(id).then((j) => {
+              if (cancelled) return;
               setJob(j);
               if (j.status === "completed") setStatus("completed");
               else if (j.status === "failed") {
                 setStatus("failed");
                 setErrorMessage(j.error_message ?? "Unknown error");
               }
-              // If still processing but SSE is gone (server restart), show last known state
             });
           },
         );
         unsubRef.current = unsub;
       })
       .catch(() => {
-        navigate("/");
+        if (!cancelled) navigate("/");
       });
 
     return () => {
+      cancelled = true;
       unsubRef.current?.();
     };
   }, [id, navigate]);

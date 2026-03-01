@@ -21,11 +21,12 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { createJob, listJobs } from "@/lib/api";
 import { loadSettings, getEffectiveModel } from "@/lib/settings";
-import type { JobResponse } from "@/lib/types";
+import type { JobResponse, JobStatus } from "@/lib/types";
 
-const ACCEPTED = ".pdf,.png,.jpg,.jpeg";
+const ACCEPTED_EXTENSIONS = ["pdf", "png", "jpg", "jpeg"];
+const ACCEPTED = ACCEPTED_EXTENSIONS.map((e) => `.${e}`).join(",");
 
-function StatusBadge({ status }: { status: string }) {
+function StatusBadge({ status }: { status: JobStatus }) {
   switch (status) {
     case "completed":
       return (
@@ -93,7 +94,7 @@ export function HomePage() {
   const addFiles = useCallback((newFiles: FileList | File[]) => {
     const arr = Array.from(newFiles).filter((f) => {
       const ext = f.name.toLowerCase().split(".").pop();
-      return ["pdf", "png", "jpg", "jpeg"].includes(ext ?? "");
+      return ACCEPTED_EXTENSIONS.includes(ext ?? "");
     });
     setFiles((prev) => [...prev, ...arr]);
   }, []);

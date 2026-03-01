@@ -62,7 +62,7 @@ export function SettingsPage() {
   const navigate = useNavigate();
   const [settings, setSettings] = useState<AppSettings>(loadSettings);
   const [saved, setSaved] = useState(false);
-  const [defaultPreamble, setDefaultPreamble] = useState<string>("");
+  const [defaultPreamble, setDefaultPreamble] = useState("");
 
   useEffect(() => {
     fetchDefaultPreamble()
