@@ -1,8 +1,9 @@
 """Pipeline state definitions."""
 
+from pathlib import Path
 from typing import Annotated, TypedDict
 
-from core.config import Settings
+from agent.config import AgentConfig
 
 
 def _replace(a, b):
@@ -12,7 +13,7 @@ def _replace(a, b):
 
 class PipelineState(TypedDict, total=False):
     pages: list[str]
-    settings_dict: Annotated[dict, _replace]  # serialized Settings for node access
+    config_dict: Annotated[dict, _replace]  # serialized AgentConfig scalars
     page_index: Annotated[int, _replace]
     retry_count: Annotated[int, _replace]
     # Body content only — no preamble, no \begin/\end{document}
@@ -25,6 +26,9 @@ class PipelineState(TypedDict, total=False):
     output_pdf_path: Annotated[str, _replace]
 
 
-def get_settings(state: PipelineState) -> Settings:
-    """Reconstruct Settings from state dict."""
-    return Settings(**state.get("settings_dict", {}))
+def get_config(state: PipelineState) -> AgentConfig:
+    """Reconstruct AgentConfig from state dict (templates loaded from files)."""
+    raw = dict(state.get("config_dict", {}))
+    if "output_dir" in raw:
+        raw["output_dir"] = Path(raw["output_dir"])
+    return AgentConfig(**raw)

@@ -14,3 +14,19 @@ wheels/
 
 # Output directories
 output/
+
+# Data / runtime state
+data/
+
+# Test PDFs
+*.pdf
+
+# E2E screenshots
+e2e-*.png
+
+# Playwright MCP logs
+.playwright-mcp/
+
+# Frontend build artifacts
+frontend/node_modules/
+frontend/dist/

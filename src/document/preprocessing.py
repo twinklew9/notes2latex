@@ -7,16 +7,14 @@ from pathlib import Path
 import pymupdf
 from PIL import Image
 
-from core.config import Settings
 
-
-def load_pages(file_paths: list[Path], settings: Settings) -> list[str]:
+def load_pages(file_paths: list[Path], dpi: int = 300) -> list[str]:
     """Convert input files (PDFs or images) into a list of base64-encoded PNG strings."""
     pages: list[str] = []
     for file_path in file_paths:
         suffix = file_path.suffix.lower()
         if suffix == ".pdf":
-            pages.extend(_pdf_to_base64_pages(file_path, settings))
+            pages.extend(_pdf_to_base64_pages(file_path, dpi))
         elif suffix in {".png", ".jpg", ".jpeg", ".tiff", ".bmp", ".webp"}:
             pages.append(_image_to_base64(file_path))
         else:
@@ -24,10 +22,10 @@ def load_pages(file_paths: list[Path], settings: Settings) -> list[str]:
     return pages
 
 
-def _pdf_to_base64_pages(pdf_path: Path, settings: Settings) -> list[str]:
+def _pdf_to_base64_pages(pdf_path: Path, dpi: int) -> list[str]:
     pages: list[str] = []
     doc = pymupdf.open(str(pdf_path))
-    zoom = settings.dpi / 72.0
+    zoom = dpi / 72.0
     matrix = pymupdf.Matrix(zoom, zoom)
     for page in doc:
         pix = page.get_pixmap(matrix=matrix)

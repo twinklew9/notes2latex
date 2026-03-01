@@ -1,7 +1,6 @@
 """Tests for the LaTeX compiler service."""
 
 from compiler.compiler import _parse_errors, compile_latex
-from core.config import Settings
 
 
 class TestParseErrors:
@@ -10,12 +9,7 @@ class TestParseErrors:
         assert _parse_errors(log) == []
 
     def test_single_error_with_line(self):
-        log = (
-            "Some output\n"
-            "! Undefined control sequence.\n"
-            "l.42 \\badcommand\n"
-            "more output\n"
-        )
+        log = "Some output\n! Undefined control sequence.\nl.42 \\badcommand\nmore output\n"
         errors = _parse_errors(log)
         assert len(errors) == 1
         assert errors[0].line == 42
@@ -47,37 +41,21 @@ class TestParseErrors:
 
 class TestCompileLatex:
     def test_valid_document(self, tmp_path):
-        latex = (
-            "\\documentclass{article}\n"
-            "\\begin{document}\n"
-            "Hello $x^2$.\n"
-            "\\end{document}\n"
-        )
-        settings = Settings()
-        result = compile_latex(latex, settings, work_dir=tmp_path)
+        latex = "\\documentclass{article}\n\\begin{document}\nHello $x^2$.\n\\end{document}\n"
+        result = compile_latex(latex, work_dir=tmp_path)
         assert result.success
         assert result.pdf_path is not None
         assert result.pdf_path.exists()
 
     def test_invalid_document(self, tmp_path):
         latex = (
-            "\\documentclass{article}\n"
-            "\\begin{document}\n"
-            "\\undefinedcommandxyz\n"
-            "\\end{document}\n"
+            "\\documentclass{article}\n\\begin{document}\n\\undefinedcommandxyz\n\\end{document}\n"
         )
-        settings = Settings()
-        result = compile_latex(latex, settings, work_dir=tmp_path)
+        result = compile_latex(latex, work_dir=tmp_path)
         assert not result.success
         assert len(result.errors) > 0
 
     def test_log_output_captured(self, tmp_path):
-        latex = (
-            "\\documentclass{article}\n"
-            "\\begin{document}\n"
-            "Hello.\n"
-            "\\end{document}\n"
-        )
-        settings = Settings()
-        result = compile_latex(latex, settings, work_dir=tmp_path)
+        latex = "\\documentclass{article}\n\\begin{document}\nHello.\n\\end{document}\n"
+        result = compile_latex(latex, work_dir=tmp_path)
         assert len(result.log_output) > 0

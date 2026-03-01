@@ -1,4 +1,4 @@
-.PHONY: install test lint format run docker-build
+.PHONY: install test lint format run serve dev-frontend docker-build
 
 # Clear PYTHONPATH to prevent system packages (e.g. ROS) from leaking into the venv
 unexport PYTHONPATH
@@ -17,6 +17,12 @@ format:
 
 run:
 	PYTHONPATH= uv run notes2latex $(ARGS)
+
+serve:
+	PYTHONPATH= uv run notes2latex serve
+
+dev-frontend:
+	cd frontend && npm run dev
 
 docker-build:
 	docker build -t notes2latex .

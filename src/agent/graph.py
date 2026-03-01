@@ -8,11 +8,11 @@ from langgraph.graph import END, StateGraph
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 from agent.config import AgentConfig
-from agent.state import PipelineState, get_settings
+from agent.progress import EventType, ProgressCallback, ProgressEvent, emit, set_progress_callback
+from agent.state import PipelineState, get_config
 from agent.utils.text import strip_code_fences
 from clients.llm.client import acompletion
 from compiler.compiler import compile_latex
-from core.config import Settings
 from core.logger import get_logger
 from document.preprocessing import load_pages
 from document.processing import assemble_document, open_environments, strip_preamble_from_body
@@ -23,17 +23,6 @@ logger = get_logger(__name__)
 # ---------------------------------------------------------------------------
 # Domain LLM functions
 # ---------------------------------------------------------------------------
-
-
-def _make_agent_config(settings: Settings) -> AgentConfig:
-    """Construct an AgentConfig from application Settings."""
-    return AgentConfig(
-        model=settings.model,
-        temperature=settings.temperature,
-        max_tokens=settings.max_tokens,
-        max_retries=settings.max_retries,
-        context_lines=settings.context_lines,
-    )
 
 
 @retry(
@@ -58,27 +47,33 @@ async def transcribe_page(
         # Send only the last N lines of body as context to stay within token limits
         lines = context_latex.splitlines()
         tail = "\n".join(lines[-config.context_lines :])
-        user_content.append({
+        user_content.append(
+            {
+                "type": "text",
+                "text": (
+                    "Here is the LaTeX body from previous pages (last "
+                    f"{config.context_lines} lines):\n```latex\n{tail}\n```\n"
+                    "Continue typesetting the next page shown in the image."
+                ),
+            }
+        )
+
+    user_content.append(
+        {
             "type": "text",
-            "text": (
-                "Here is the LaTeX body from previous pages (last "
-                f"{config.context_lines} lines):\n```latex\n{tail}\n```\n"
-                "Continue typesetting the next page shown in the image."
-            ),
-        })
+            "text": "Typeset the handwritten math notes in this image into LaTeX body content.",
+        }
+    )
 
-    user_content.append({
-        "type": "text",
-        "text": "Typeset the handwritten math notes in this image into LaTeX body content.",
-    })
-
-    user_content.append({
-        "type": "image_url",
-        "image_url": {
-            "url": f"data:image/png;base64,{image_b64}",
-            "detail": "high",
-        },
-    })
+    user_content.append(
+        {
+            "type": "image_url",
+            "image_url": {
+                "url": f"data:image/png;base64,{image_b64}",
+                "detail": "high",
+            },
+        }
+    )
 
     messages.append({"role": "user", "content": user_content})
 
@@ -87,6 +82,7 @@ async def transcribe_page(
         messages=messages,
         temperature=config.temperature,
         max_tokens=config.max_tokens,
+        api_key=config.api_key,
     )
     return strip_code_fences(text)
 
@@ -127,6 +123,7 @@ async def fix_latex(
         messages=messages,
         temperature=0.0,
         max_tokens=config.max_tokens,
+        api_key=config.api_key,
     )
     return strip_code_fences(text)
 
@@ -151,12 +148,20 @@ async def preprocess_node(state: PipelineState) -> dict:
 
 
 async def generate_latex_node(state: PipelineState) -> dict:
-    settings = get_settings(state)
-    config = _make_agent_config(settings)
+    config = get_config(state)
     page_idx = state["page_index"]
+    total = len(state["pages"])
     page_b64 = state["pages"][page_idx]
 
-    logger.info("Generating LaTeX for page %d/%d", page_idx + 1, len(state["pages"]))
+    logger.info("Generating LaTeX for page %d/%d", page_idx + 1, total)
+    await emit(
+        ProgressEvent(
+            event_type=EventType.PAGE_GENERATING,
+            page=page_idx + 1,
+            total_pages=total,
+            message=f"Generating LaTeX for page {page_idx + 1}/{total}",
+        )
+    )
 
     accumulated_body = state.get("accumulated_body", "")
     open_envs = open_environments(accumulated_body) if accumulated_body else []
@@ -189,9 +194,19 @@ async def generate_latex_node(state: PipelineState) -> dict:
 
 
 async def compile_latex_node(state: PipelineState) -> dict:
-    settings = get_settings(state)
-    config = _make_agent_config(settings)
+    config = get_config(state)
+    page_idx = state["page_index"]
+    total = len(state["pages"])
     body = state["accumulated_body"]
+
+    await emit(
+        ProgressEvent(
+            event_type=EventType.PAGE_COMPILING,
+            page=page_idx + 1,
+            total_pages=total,
+            message=f"Compiling page {page_idx + 1}/{total}",
+        )
+    )
 
     # Temporarily close any environments still open at the end of the body
     open_envs = open_environments(body)
@@ -200,33 +215,55 @@ async def compile_latex_node(state: PipelineState) -> dict:
         body = body + "\n" + closing_tags
 
     full_doc = assemble_document(body, config.preamble)
-    result = await asyncio.to_thread(compile_latex, full_doc, settings)
+    result = await asyncio.to_thread(
+        compile_latex,
+        full_doc,
+        config.latex_engine,
+        config.compile_timeout,
+    )
 
     if result.errors:
         logger.warning(
             "Page %d compile errors: %s",
-            state["page_index"] + 1,
+            page_idx + 1,
             "; ".join(e.message for e in result.errors),
         )
     else:
-        logger.info("Page %d compiled successfully", state["page_index"] + 1)
+        logger.info("Page %d compiled successfully", page_idx + 1)
+        await emit(
+            ProgressEvent(
+                event_type=EventType.PAGE_COMPILED_OK,
+                page=page_idx + 1,
+                total_pages=total,
+                message=f"Page {page_idx + 1} compiled successfully",
+            )
+        )
 
     return {
         "compiler_success": result.success,
         "errors": [
-            {"line": e.line, "message": e.message, "context": e.context}
-            for e in result.errors
+            {"line": e.line, "message": e.message, "context": e.context} for e in result.errors
         ],
     }
 
 
 async def fix_latex_node(state: PipelineState) -> dict:
-    settings = get_settings(state)
-    config = _make_agent_config(settings)
+    config = get_config(state)
     retry_count = state["retry_count"] + 1
     page_idx = state["page_index"]
+    total = len(state["pages"])
 
     logger.info("Fix attempt %d for page %d", retry_count, page_idx + 1)
+    await emit(
+        ProgressEvent(
+            event_type=EventType.PAGE_FIX_ATTEMPT,
+            page=page_idx + 1,
+            total_pages=total,
+            retry=retry_count,
+            max_retries=config.max_retries,
+            message=f"Fixing errors on page {page_idx + 1} (attempt {retry_count}/{config.max_retries})",
+        )
+    )
 
     # Calculate line offset: preamble lines + base_body lines
     preamble_lines = config.preamble.count("\n") + 1
@@ -262,17 +299,34 @@ async def fix_latex_node(state: PipelineState) -> dict:
 
 
 async def advance_page_node(state: PipelineState) -> dict:
+    page_idx = state["page_index"]
+    total = len(state["pages"])
+    await emit(
+        ProgressEvent(
+            event_type=EventType.PAGE_DONE,
+            page=page_idx + 1,
+            total_pages=total,
+            message=f"Page {page_idx + 1}/{total} done",
+        )
+    )
     return {
-        "page_index": state["page_index"] + 1,
+        "page_index": page_idx + 1,
         "retry_count": 0,
     }
 
 
 async def finalize_node(state: PipelineState) -> dict:
-    settings = get_settings(state)
-    config = _make_agent_config(settings)
-    output_dir = settings.output_dir
+    config = get_config(state)
+    output_dir = config.output_dir
     output_dir.mkdir(parents=True, exist_ok=True)
+
+    await emit(
+        ProgressEvent(
+            event_type=EventType.FINALIZING,
+            total_pages=len(state["pages"]),
+            message="Assembling final document",
+        )
+    )
 
     # Assemble full document from body
     full_doc = assemble_document(state["accumulated_body"], config.preamble)
@@ -282,7 +336,12 @@ async def finalize_node(state: PipelineState) -> dict:
     tex_path.write_text(full_doc, encoding="utf-8")
 
     # One final compilation to get the PDF in the output dir
-    result = await asyncio.to_thread(compile_latex, full_doc, settings)
+    result = await asyncio.to_thread(
+        compile_latex,
+        full_doc,
+        config.latex_engine,
+        config.compile_timeout,
+    )
 
     output_pdf = ""
     if result.pdf_path and result.pdf_path.exists():
@@ -314,8 +373,8 @@ async def finalize_node(state: PipelineState) -> dict:
 def route_after_compile(state: PipelineState) -> str:
     if state.get("compiler_success"):
         return "advance"
-    settings = get_settings(state)
-    if state.get("retry_count", 0) >= settings.max_retries:
+    config = get_config(state)
+    if state.get("retry_count", 0) >= config.max_retries:
         logger.warning(
             "Max retries reached for page %d, advancing anyway",
             state["page_index"] + 1,
@@ -379,18 +438,33 @@ def build_graph() -> StateGraph:
 # ---------------------------------------------------------------------------
 
 
-async def run_pipeline(file_paths: list[Path], settings: Settings) -> PipelineState:
+async def run_pipeline(
+    file_paths: list[Path],
+    config: AgentConfig,
+    callback: ProgressCallback | None = None,
+) -> PipelineState:
     """Run the full conversion pipeline on the given input files."""
-    pages = load_pages(file_paths, settings)
+    if callback is not None:
+        set_progress_callback(callback)
+
+    pages = load_pages(file_paths, config.dpi)
 
     logger.info("Loaded %d page(s) from %d file(s)", len(pages), len(file_paths))
+
+    await emit(
+        ProgressEvent(
+            event_type=EventType.JOB_STARTED,
+            total_pages=len(pages),
+            message=f"Starting conversion of {len(pages)} page(s)",
+        )
+    )
 
     graph = build_graph()
     compiled = graph.compile()
 
     initial_state: PipelineState = {
         "pages": pages,
-        "settings_dict": settings.model_dump(mode="json"),
+        "config_dict": config.to_state_dict(),
         "page_index": 0,
         "retry_count": 0,
         "base_body": "",
@@ -402,5 +476,27 @@ async def run_pipeline(file_paths: list[Path], settings: Settings) -> PipelineSt
         "output_pdf_path": "",
     }
 
-    final_state = await compiled.ainvoke(initial_state)
+    try:
+        final_state = await compiled.ainvoke(initial_state)
+    except Exception as exc:
+        await emit(
+            ProgressEvent(
+                event_type=EventType.JOB_FAILED,
+                message=str(exc),
+            )
+        )
+        raise
+
+    await emit(
+        ProgressEvent(
+            event_type=EventType.JOB_COMPLETED,
+            total_pages=len(pages),
+            message="Conversion complete",
+            extra={
+                "output_tex_path": final_state.get("output_tex_path", ""),
+                "output_pdf_path": final_state.get("output_pdf_path", ""),
+            },
+        )
+    )
+
     return final_state

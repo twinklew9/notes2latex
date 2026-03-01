@@ -6,8 +6,6 @@ import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from core.config import Settings
-
 RE_ERROR = re.compile(r"^! (.+)$", re.MULTILINE)
 RE_LINE_NUM = re.compile(r"^l\.(\d+)\s*(.*)", re.MULTILINE)
 
@@ -28,7 +26,10 @@ class CompilerResult:
 
 
 def compile_latex(
-    latex_source: str, settings: Settings, work_dir: Path | None = None
+    latex_source: str,
+    latex_engine: str = "pdflatex",
+    compile_timeout: int = 60,
+    work_dir: Path | None = None,
 ) -> CompilerResult:
     """Write latex source to a .tex file, compile with latexmk, and parse the log."""
     if work_dir is None:
@@ -39,7 +40,7 @@ def compile_latex(
 
     cmd = [
         "latexmk",
-        f"-{settings.latex_engine}",
+        f"-{latex_engine}",
         "-interaction=nonstopmode",
         "-halt-on-error",
         f"-output-directory={work_dir}",
@@ -51,7 +52,7 @@ def compile_latex(
             cmd,
             capture_output=True,
             text=True,
-            timeout=settings.compile_timeout,
+            timeout=compile_timeout,
             cwd=str(work_dir),
         )
     except subprocess.TimeoutExpired:

@@ -4,28 +4,30 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from agent.config import DEFAULT_PREAMBLE
+from agent.config import AgentConfig
 from agent.graph import route_after_advance, route_after_compile, run_pipeline
 from agent.state import PipelineState
 from compiler.compiler import CompilerResult
-from core.config import Settings
 from document.processing import assemble_document, open_environments
+
+# Default preamble loaded from prompts/preamble.tex
+_DEFAULT_PREAMBLE = AgentConfig().preamble
 
 
 class TestRouting:
     def test_route_after_compile_success(self):
-        state: PipelineState = {"compiler_success": True, "retry_count": 0, "settings_dict": {}}
+        state: PipelineState = {"compiler_success": True, "retry_count": 0, "config_dict": {}}
         assert route_after_compile(state) == "advance"
 
     def test_route_after_compile_retry(self):
-        state: PipelineState = {"compiler_success": False, "retry_count": 1, "settings_dict": {}}
+        state: PipelineState = {"compiler_success": False, "retry_count": 1, "config_dict": {}}
         assert route_after_compile(state) == "fix"
 
     def test_route_after_compile_max_retries(self):
         state: PipelineState = {
             "compiler_success": False,
             "retry_count": 3,
-            "settings_dict": {},
+            "config_dict": {},
             "page_index": 0,
         }
         assert route_after_compile(state) == "advance"
@@ -104,13 +106,13 @@ class TestOpenEnvironments:
 class TestAssembleDocument:
     def test_assembles_correctly(self):
         body = "Hello $x^2$."
-        doc = assemble_document(body, DEFAULT_PREAMBLE)
-        assert doc.startswith(DEFAULT_PREAMBLE)
+        doc = assemble_document(body, _DEFAULT_PREAMBLE)
+        assert doc.startswith(_DEFAULT_PREAMBLE)
         assert "Hello $x^2$." in doc
         assert doc.strip().endswith(r"\end{document}")
 
     def test_empty_body(self):
-        doc = assemble_document("", DEFAULT_PREAMBLE)
+        doc = assemble_document("", _DEFAULT_PREAMBLE)
         assert r"\begin{document}" in doc
         assert r"\end{document}" in doc
 
@@ -131,7 +133,7 @@ class TestPipelineEndToEnd:
         img_path = tmp_path / "test.png"
         img.save(img_path)
 
-        settings = Settings(output_dir=tmp_path / "output", max_retries=1)
+        config = AgentConfig(output_dir=tmp_path / "output", max_retries=1)
 
         with (
             patch("agent.graph.transcribe_page", new_callable=AsyncMock) as mock_transcribe,
@@ -146,13 +148,13 @@ class TestPipelineEndToEnd:
                 log_output="",
             )
 
-            result = await run_pipeline([img_path], settings)
+            result = await run_pipeline([img_path], config)
 
         # accumulated_body should be body-only
         assert result["accumulated_body"] == MOCK_BODY
         # The assembled document passed to compile should include preamble
         compile_call_args = mock_compile.call_args_list[0][0][0]
-        assert DEFAULT_PREAMBLE in compile_call_args
+        assert _DEFAULT_PREAMBLE in compile_call_args
         assert r"\end{document}" in compile_call_args
         mock_transcribe.assert_called_once()
         # compile is called in compile_latex_node + finalize_node = 2 times

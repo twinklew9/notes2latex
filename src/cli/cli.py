@@ -9,8 +9,9 @@ import typer
 from rich.console import Console
 from rich.logging import RichHandler
 
-from core.config import Settings
+from agent.config import AgentConfig
 from agent.graph import run_pipeline
+from core.config import Settings
 
 app = typer.Typer(
     name="notes2latex",
@@ -55,6 +56,7 @@ def convert(
         overrides["dpi"] = dpi
 
     settings = Settings(**overrides)
+    config = AgentConfig.from_settings(settings)
 
     logging.basicConfig(
         level=logging.INFO,
@@ -63,10 +65,10 @@ def convert(
     )
 
     console.print(
-        f"[bold blue]Processing {len(files)} file(s)[/] with model [cyan]{settings.model}[/]"
+        f"[bold blue]Processing {len(files)} file(s)[/] with model [cyan]{config.model}[/]"
     )
 
-    result = asyncio.run(run_pipeline(files, settings))
+    result = asyncio.run(run_pipeline(files, config))
 
     if result.get("output_pdf_path"):
         console.print(f"[bold green]PDF:[/] {result['output_pdf_path']}")
@@ -77,6 +79,24 @@ def convert(
             "[bold yellow]Warning:[/] Compilation failed. "
             "LaTeX source was saved but no PDF was produced."
         )
+
+
+@app.command()
+def serve(
+    host: Annotated[
+        str,
+        typer.Option("--host", "-h", help="Bind host"),
+    ] = "0.0.0.0",
+    port: Annotated[
+        int,
+        typer.Option("--port", "-p", help="Bind port"),
+    ] = 8000,
+) -> None:
+    """Start the web UI server."""
+    import uvicorn
+
+    console.print(f"[bold blue]Starting server[/] on [cyan]{host}:{port}[/]")
+    uvicorn.run("app:app", host=host, port=port)
 
 
 @app.command()

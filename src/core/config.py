@@ -1,5 +1,6 @@
 """Application configuration via pydantic-settings."""
 
+from functools import lru_cache
 from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -31,3 +32,9 @@ class Settings(BaseSettings):
 
     # Preprocessing
     dpi: int = 300
+
+
+@lru_cache
+def get_settings() -> Settings:
+    """Singleton Settings instance loaded from environment."""
+    return Settings()

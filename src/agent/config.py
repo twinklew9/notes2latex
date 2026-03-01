@@ -1,58 +1,43 @@
 """Agent configuration — settings, preamble, and prompt templates."""
 
+from __future__ import annotations
+
 from dataclasses import dataclass, field
+from pathlib import Path
+from typing import TYPE_CHECKING
 
 from jinja2 import BaseLoader, Environment
 
-from agent.prompts.loader import load_default_template
+if TYPE_CHECKING:
+    from core.config import Settings
 
-DEFAULT_PREAMBLE = r"""\documentclass[12pt]{article}
-
-% --- Packages ---
-\usepackage{amsmath, amssymb, amsthm}
-\usepackage{mathtools}
-\usepackage{thmtools}
-\usepackage{cancel}
-\usepackage{mathrsfs}
-
-% physics redefines \div to divergence — save and restore
-\let\olddiv\div
-\usepackage{physics}
-\let\div\olddiv
-
-\usepackage{siunitx}
-\usepackage{tikz, tikz-cd, pgfplots}
-\pgfplotsset{compat=1.18}
-\usetikzlibrary{decorations.pathreplacing, arrows.meta, calc}
-\usepackage{algorithm2e}
-\usepackage{listings}
-\usepackage{geometry}
-\geometry{margin=1in}
-\usepackage{enumitem}
-\usepackage{hyperref}
-\usepackage{tcolorbox}
-
-% --- Theorem environments ---
-\newtheorem{theorem}{Theorem}[section]
-\newtheorem{lemma}[theorem]{Lemma}
-\newtheorem{corollary}[theorem]{Corollary}
-\newtheorem{proposition}[theorem]{Proposition}
-\theoremstyle{definition}
-\newtheorem{definition}[theorem]{Definition}
-\newtheorem{example}[theorem]{Example}
-\newtheorem{exercise}[theorem]{Exercise}
-\theoremstyle{remark}
-\newtheorem{remark}[theorem]{Remark}
-\newtheorem{notation}[theorem]{Notation}
-
-\begin{document}"""
-
+_PROMPTS_DIR = Path(__file__).parent / "prompts"
 _jinja_env = Environment(loader=BaseLoader())
+
+_SERIALIZABLE_FIELDS = frozenset(
+    {
+        "model",
+        "temperature",
+        "max_tokens",
+        "max_retries",
+        "context_lines",
+        "api_key",
+        "dpi",
+        "latex_engine",
+        "compile_timeout",
+        "output_dir",
+    }
+)
+
+
+def _load_prompt(name: str) -> str:
+    """Read a prompt template by name (without extension) from the prompts directory."""
+    return (_PROMPTS_DIR / f"{name}.md").read_text(encoding="utf-8")
 
 
 @dataclass
 class AgentConfig:
-    """Configuration for the agent pipeline."""
+    """Configuration for a single pipeline run."""
 
     # LLM settings
     model: str = "openrouter/google/gemini-3-flash-preview"
@@ -63,20 +48,54 @@ class AgentConfig:
     max_retries: int = 3
     context_lines: int = 40
 
-    # Document settings
-    preamble: str = field(default_factory=lambda: DEFAULT_PREAMBLE)
+    # Runtime
+    api_key: str | None = None
+
+    # Output / preprocessing
+    output_dir: Path = Path("./output")
+    dpi: int = 300
+
+    # Compiler
+    latex_engine: str = "pdflatex"
+    compile_timeout: int = 60
+
+    # Document settings (loaded from files)
+    preamble: str = field(
+        default_factory=lambda: (_PROMPTS_DIR / "preamble.tex").read_text(encoding="utf-8")
+    )
 
     # Prompt templates (raw Jinja2 strings, overridable)
-    transcribe_template: str = field(
-        default_factory=lambda: load_default_template("transcribe")
-    )
-    fix_errors_template: str = field(
-        default_factory=lambda: load_default_template("fix_errors")
-    )
+    transcribe_template: str = field(default_factory=lambda: _load_prompt("transcribe"))
+    fix_errors_template: str = field(default_factory=lambda: _load_prompt("fix_errors"))
 
     # Metadata
     name: str = "notes2latex"
     version: str = "0.1.0"
+
+    def to_state_dict(self) -> dict:
+        """Serialize scalar/path fields for LangGraph state (excludes templates)."""
+        d = {}
+        for f in _SERIALIZABLE_FIELDS:
+            val = getattr(self, f)
+            d[f] = str(val) if isinstance(val, Path) else val
+        return d
+
+    @classmethod
+    def from_settings(cls, settings: Settings, **overrides) -> AgentConfig:
+        """Build AgentConfig from app Settings with optional per-request overrides."""
+        base = {
+            "model": settings.model,
+            "temperature": settings.temperature,
+            "max_tokens": settings.max_tokens,
+            "max_retries": settings.max_retries,
+            "context_lines": settings.context_lines,
+            "output_dir": settings.output_dir,
+            "dpi": settings.dpi,
+            "latex_engine": settings.latex_engine,
+            "compile_timeout": settings.compile_timeout,
+        }
+        base.update({k: v for k, v in overrides.items() if v is not None})
+        return cls(**base)
 
     def render_transcribe_prompt(self, page_number: int, open_envs: list[str]) -> str:
         """Render the transcription system prompt from stored template."""

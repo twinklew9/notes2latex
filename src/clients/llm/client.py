@@ -13,12 +13,16 @@ async def acompletion(
     messages: list[dict],
     temperature: float,
     max_tokens: int,
+    api_key: str | None = None,
 ) -> str:
     """Run an async litellm completion and return the text content."""
-    response = await litellm.acompletion(
-        model=model,
-        messages=messages,
-        temperature=temperature,
-        max_tokens=max_tokens,
-    )
+    kwargs: dict = {
+        "model": model,
+        "messages": messages,
+        "temperature": temperature,
+        "max_tokens": max_tokens,
+    }
+    if api_key is not None:
+        kwargs["api_key"] = api_key
+    response = await litellm.acompletion(**kwargs)
     return response.choices[0].message.content

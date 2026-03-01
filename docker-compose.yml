@@ -1,10 +1,12 @@
 services:
   notes2latex:
     build: .
+    ports:
+      - "8000:8000"
     env_file:
       - .env
     volumes:
-      - ./input:/input
-      - ./output:/output
-    entrypoint: ["uv", "run", "notes2latex", "convert"]
-    command: ["/input/notes.pdf", "-o", "/output"]
+      - notes2latex-data:/app/data
+
+volumes:
+  notes2latex-data:
