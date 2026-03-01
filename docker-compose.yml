@@ -1,7 +1,6 @@
 services:
   notes2latex:
     image: ghcr.io/advaypakhale/notes2latex:latest
-    build: .
     ports:
       - "8000:8000"
     env_file:

@@ -14,15 +14,25 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     texlive-fonts-recommended texlive-science texlive-pictures \
     latexmk && rm -rf /var/lib/apt/lists/*
 
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+COPY --from=ghcr.io/astral-sh/uv:0.10 /uv /uvx /bin/
 
 WORKDIR /app
+
+ENV UV_COMPILE_BYTECODE=1 \
+    UV_LINK_MODE=copy \
+    UV_NO_DEV=1
+
 COPY pyproject.toml uv.lock README.md ./
-RUN uv sync --frozen --no-dev --no-install-project
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --locked --no-install-project --no-editable
 
 COPY src/ src/
-RUN uv sync --frozen --no-dev
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --locked --no-editable
+
 COPY --from=frontend /app/frontend/dist frontend/dist
 
+ENV PATH="/app/.venv/bin:$PATH"
+
 EXPOSE 8000
-CMD ["uv", "run", "notes2latex", "serve"]
+CMD ["notes2latex", "serve"]
