@@ -31,3 +31,4 @@ e2e-*.png
 frontend/node_modules/
 frontend/dist/
 .claude/worktrees/
+docker-compose.override.yml
