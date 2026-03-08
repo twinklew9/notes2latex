@@ -1,6 +1,15 @@
 """Tests for the LaTeX compiler service."""
 
+import shutil
+
+import pytest
+
 from compiler.compiler import _parse_errors, compile_latex
+
+requires_latexmk = pytest.mark.skipif(
+    shutil.which("latexmk") is None,
+    reason="latexmk not installed",
+)
 
 
 class TestParseErrors:
@@ -39,6 +48,7 @@ class TestParseErrors:
         assert _parse_errors("") == []
 
 
+@requires_latexmk
 class TestCompileLatex:
     def test_valid_document(self, tmp_path):
         latex = "\\documentclass{article}\n\\begin{document}\nHello $x^2$.\n\\end{document}\n"
